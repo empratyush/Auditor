@@ -7,6 +7,7 @@ import android.graphics.Rect
 import android.graphics.YuvImage
 import android.media.Image
 import android.util.Log
+import android.widget.ImageView
 import androidx.camera.core.ImageAnalysis.Analyzer
 import androidx.camera.core.ImageProxy
 import com.google.zxing.BarcodeFormat
@@ -55,6 +56,13 @@ class QRCodeImageAnalyzer(private val scannerOverlay: QROverlay, private val lis
         val rcBitmap = BitmapFactory.decodeByteArray(stream.toByteArray(), 0, stream.size())
         stream.close()
 
+        val activity = (scannerOverlay.context as QRScannerActivity)
+        activity.runOnUiThread {
+            activity.findViewById<ImageView>(R.id.output).setImageBitmap(null)
+            activity.findViewById<ImageView>(R.id.output).setImageBitmap(rcBitmap)
+
+        }
+
         try {
             val intArray = IntArray(rcBitmap.width * rcBitmap.height)
             rcBitmap.getPixels(intArray, 0, rcBitmap.width, 0, 0, rcBitmap.width, rcBitmap.height)
@@ -79,7 +87,7 @@ class QRCodeImageAnalyzer(private val scannerOverlay: QROverlay, private val lis
             Log.d(TAG, "Analysis FPS: ${"%.02f".format(fps)}")
             lastFpsTimestamp = now
         }
-        rcBitmap.recycle()
+        //rcBitmap.recycle()
         image.close()
     }
 
