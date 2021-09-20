@@ -6,8 +6,10 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
+import android.graphics.RectF;
 import android.text.TextPaint;
 import android.util.AttributeSet;
+import android.util.Size;
 import android.view.View;
 
 public class QROverlay extends View {
@@ -23,6 +25,7 @@ public class QROverlay extends View {
     private int frameSideLength = 42;
 
     private final float SIZE_FACTOR = 0.6f;
+    private final RectF scanRect = new RectF();
 
     public QROverlay(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -53,9 +56,10 @@ public class QROverlay extends View {
         final int width = getWidth();
         final int height = getHeight();
 
-        final int dim = Math.min(width, height);
 
-        size = (int) (dim * SIZE_FACTOR);
+        int maxPossibleWidth = Math.min(getWidth(), getHeight());
+        size = maxPossibleWidth - (maxPossibleWidth / 10);
+
         tPaint.setTextSize(T_SIZE * SIZE_FACTOR * getResources().getDisplayMetrics().density);
 
         final int verticalHeight = (height - size) / 2;
@@ -118,9 +122,20 @@ public class QROverlay extends View {
         canvas.drawLine(x1, y1 - halfFrameSideSize,
                 x1 - frameSideLength, y1 - halfFrameSideSize,
                 fPaint);
+
+        scanRect.left = (getWidth() - size) / 2f;
+        scanRect.top = (getHeight() -  size) / 2f;
+        scanRect.right = scanRect.left + size;
+        scanRect.bottom = scanRect.top + size;
+
     }
 
-    public int getSize() {
-        return size;
+    public Size getSize() {
+        return new Size(getWidth(), getHeight());
     }
+
+    public RectF getScanRect(){
+        return scanRect;
+    }
+
 }

@@ -38,7 +38,7 @@ class QRScannerActivity : AppCompatActivity() {
         )
 
         val autoFocusPoint = factory.createPoint(contentFrame.width / 2.0f,
-            contentFrame.height / 2.0f, overlayView.size.toFloat())
+            contentFrame.height / 2.0f, overlayView.size.width.toFloat())
 
         camera.cameraControl.startFocusAndMetering(
             FocusMeteringAction.Builder(autoFocusPoint).disableAutoCancel().build()
@@ -82,7 +82,9 @@ class QRScannerActivity : AppCompatActivity() {
 
     private fun startCamera() {
         contentFrame = findViewById(R.id.content_frame)
-        contentFrame.setScaleType(PreviewView.ScaleType.FIT_CENTER)
+        //contentFrame.setScaleType(PreviewView.ScaleType.FIT_CENTER)
+        //adding scaling can cause problem with analizer unless it also handles scaling
+        // currently it only handle rotation to keep it simple
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
@@ -104,12 +106,12 @@ class QRScannerActivity : AppCompatActivity() {
                 overlayView = findViewById(R.id.overlay)
 
                 val imageAnalysis = ImageAnalysis.Builder()
-                    .setTargetResolution(Size(960, 960))
+                    //.setTargetResolution(Size(960, 960)) requesting resolution can cause additional cropping by camerax
                     .build()
 
                 imageAnalysis.setAnalyzer(
                     executor,
-                    QRCodeImageAnalyzer (this) { response ->
+                    QRCodeImageAnalyzer (overlayView) { response ->
                         if (response != null) {
                             handleResult(response)
                         }
