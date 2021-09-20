@@ -3,6 +3,7 @@ package app.attestation.auditor
 import android.util.Log
 import androidx.camera.core.ImageAnalysis.Analyzer
 import androidx.camera.core.ImageProxy
+import androidx.lifecycle.MutableLiveData
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
@@ -11,9 +12,10 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import java.util.EnumMap
+import kotlin.math.min
 import kotlin.math.roundToInt
 
-class QRCodeImageAnalyzer(private val mActivity: QRScannerActivity, private val listener: (qrCode: String?) -> Unit): Analyzer {
+class QRCodeImageAnalyzer(private val  cropPercentData : MutableLiveData<Int>, private val listener: (qrCode: String?) -> Unit): Analyzer {
 
     private val TAG = "QRCodeImageAnalyzer"
 
@@ -32,45 +34,33 @@ class QRCodeImageAnalyzer(private val mActivity: QRScannerActivity, private val 
     }
 
     override fun analyze(image: ImageProxy) {
+
+        val cropPercent = cropPercentData.value
+        if(cropPercent == null){
+            image.close()
+            return
+        }
+
         val plane = image.planes[0]
         val byteBuffer = plane.buffer
-        val rotationDegrees = image.imageInfo.rotationDegrees
 
         if (imageData.size != byteBuffer.capacity()) {
             imageData = ByteArray(byteBuffer.capacity())
         }
         byteBuffer[imageData]
 
-        val previewWidth: Int
-        val previewHeight: Int
 
-        if (rotationDegrees == 0 || rotationDegrees == 180) {
-            previewWidth = mActivity.contentFrame.width
-            previewHeight = mActivity.contentFrame.height
-        } else {
-            previewWidth = mActivity.contentFrame.height
-            previewHeight = mActivity.contentFrame.width
-        }
-
-        val iFact = if (previewWidth < previewHeight) {
-            image.width / previewWidth.toFloat()
-        } else {
-            image.height / previewHeight.toFloat()
-        }
-
-        val size = mActivity.getOverlayView().size * iFact
-
-        val left = (image.width - size) / 2
-        val top = (image.height - size) / 2
+        val croppedSize = (min(image.width, image.height) * cropPercent) / 100
+        val left = (image.width - croppedSize) / 2
+        val top = (image.height - croppedSize) / 2
 
         val source = PlanarYUVLuminanceSource(
             imageData,
-            plane.rowStride, image.height,
-            left.roundToInt(), top.roundToInt(),
-            size.roundToInt(), size.roundToInt(),
+            image.width, image.height,
+            left, top,
+            croppedSize, croppedSize,
             false
         )
-
         val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
         try {
             val result = reader.decodeWithState(binaryBitmap)

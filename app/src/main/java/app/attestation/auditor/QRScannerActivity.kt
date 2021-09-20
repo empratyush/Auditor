@@ -16,19 +16,23 @@ import androidx.camera.core.MeteringPointFactory
 import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.core.CameraInfoUnavailableException
+import androidx.camera.core.SurfaceRequest
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.CameraController
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.MutableLiveData
 import java.util.concurrent.Executors
+import kotlin.math.min
 
 class QRScannerActivity : AppCompatActivity() {
 
     private val executor = Executors.newSingleThreadExecutor()
     private lateinit var overlayView: QROverlay
     private lateinit var camera: Camera
-    lateinit var contentFrame: PreviewView
+    private lateinit var contentFrame: PreviewView
+    private val cropPercent = MutableLiveData<Int>()
 
     private val handler = Handler(Looper.getMainLooper())
     private val autoCenterFocusDuration = 2000L
@@ -108,13 +112,18 @@ class QRScannerActivity : AppCompatActivity() {
                         it.setSurfaceProvider(contentFrame.surfaceProvider)
                     }
 
+                    preview.setSurfaceProvider(SurfaceProviderWithCallback(contentFrame){
+                        val rect = preview.resolutionInfo?.cropRect!!
+                        cropPercent.postValue((overlayView.size * 100) /  min(rect.width(), rect.height()))
+                    })
+
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setTargetResolution(Size(960, 960))
                     .build()
 
                 imageAnalysis.setAnalyzer(
                     executor,
-                    QRCodeImageAnalyzer (this) { response ->
+                    QRCodeImageAnalyzer(cropPercent) { response ->
                         if (response != null) {
                             handleResult(response)
                         }
@@ -126,6 +135,17 @@ class QRScannerActivity : AppCompatActivity() {
             },
             ContextCompat.getMainExecutor(this)
         )
+    }
+
+    inner class SurfaceProviderWithCallback (
+            private val preview: PreviewView,
+            private val callback : () -> Unit
+    ) : Preview.SurfaceProvider {
+
+        override fun onSurfaceRequested(request: SurfaceRequest) {
+            preview.surfaceProvider.onSurfaceRequested(request)
+            callback.invoke()
+        }
     }
 
     private fun handleResult(rawResult: String) {
