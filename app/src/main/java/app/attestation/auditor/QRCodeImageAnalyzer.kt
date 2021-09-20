@@ -10,6 +10,7 @@ import android.util.Log
 import android.widget.ImageView
 import androidx.camera.core.ImageAnalysis.Analyzer
 import androidx.camera.core.ImageProxy
+import androidx.lifecycle.MutableLiveData
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.ChecksumException
@@ -21,8 +22,9 @@ import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import java.util.EnumMap
 import java.io.ByteArrayOutputStream
+import kotlin.math.min
 
-class QRCodeImageAnalyzer(private val scannerOverlay: QROverlay, private val listener: (qrCode: String?) -> Unit): Analyzer {
+class QRCodeImageAnalyzer(private val scannerOverlay: QROverlay, private val  cropPercentData : MutableLiveData<Int>, private val listener: (qrCode: String?) -> Unit): Analyzer {
     private val TAG = "QRCodeImageAnalyzer"
 
     private var frameCounter = 0
@@ -39,54 +41,86 @@ class QRCodeImageAnalyzer(private val scannerOverlay: QROverlay, private val lis
 
     @SuppressLint("UnsafeOptInUsageError")
     override fun analyze(image: ImageProxy) {
-        val rotation = image.imageInfo.rotationDegrees
-
         val proxyImage = image.image!!
-        val cropRect = proxyImage.getCropRectAccordingToRotation( rotation)
-        proxyImage.cropRect = cropRect
 
-        //preview have same image format
-        val data: ByteArray = convertYuv420toNV21(proxyImage)
-        //build an actual Yuv Image
-        val yuvImage = YuvImage(data, ImageFormat.NV21, cropRect.width(), cropRect.height(), null)
+       /* val rotation = image.imageInfo.rotationDegrees
+        val rect = (scannerOverlay.context as QRScannerActivity).rect
+        val cropPercent = (scannerOverlay.squareSize() * 100) /  min(rect.width(), rect.height())
 
-        //create a bitmap so we can crop it
-        val stream = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(Rect(0, 0, cropRect.width(), cropRect.height()), 100, stream)
-        val rcBitmap = BitmapFactory.decodeByteArray(stream.toByteArray(), 0, stream.size())
-        stream.close()
+        val frame =(scannerOverlay.context as QRScannerActivity).findViewById<PreviewView>(R.id.content_frame)
 
-        val activity = (scannerOverlay.context as QRScannerActivity)
-        activity.runOnUiThread {
-            activity.findViewById<ImageView>(R.id.output).setImageBitmap(null)
-            activity.findViewById<ImageView>(R.id.output).setImageBitmap(rcBitmap)
+        val fWidth = frame.width
+        val fHeight = frame.height
 
+        val width  = rect.width()
+        val height  = rect.height()
+        val rLeft = rect.left*/
+
+        cropPercentData.value?.let { cropPercent ->
+
+            //preview have same image format
+            val data: ByteArray = convertYuv420toNV21(proxyImage)
+            //build an actual Yuv Image
+            val yuvImage = YuvImage(data, ImageFormat.NV21, image.width, image.height, null)
+
+            val croppedSize = ((min(yuvImage.width, yuvImage.height) * cropPercent) / 100)
+
+            val left = (yuvImage.width - croppedSize) / 2
+            val top = (yuvImage.height - croppedSize) / 2
+            val bottom = (yuvImage.height + croppedSize) / 2
+            val right = (yuvImage.width + croppedSize) / 2
+
+            val cropRect = Rect(
+                    left,
+                    top,
+                    right,
+                    bottom
+            )
+
+            println("Cropping $cropPercent % size : $croppedSize yuvImage width : ${yuvImage.width} height ${yuvImage.height} ")
+
+            //create a bitmap so we can crop it
+            val stream = ByteArrayOutputStream()
+            yuvImage.compressToJpeg(cropRect, 100, stream)
+            val rcBitmap = BitmapFactory.decodeByteArray(stream.toByteArray(), 0, stream.size())
+            stream.close()
+
+
+            val activity = (scannerOverlay.context as QRScannerActivity)
+            activity.runOnUiThread {
+                activity.findViewById<ImageView>(R.id.output).setImageBitmap(null)
+                activity.findViewById<ImageView>(R.id.output).setImageBitmap(rcBitmap)
+
+            }
+
+            try {
+                rcBitmap?.let { _ ->
+                    val intArray = IntArray(rcBitmap.width * rcBitmap.height)
+                    rcBitmap.getPixels(intArray, 0, rcBitmap.width, 0, 0, rcBitmap.width, rcBitmap.height)
+
+                    val binaryBitmap = BinaryBitmap(HybridBinarizer(RGBLuminanceSource(rcBitmap.width, rcBitmap.height, intArray)))
+                    val result = reader.decode(binaryBitmap)
+                    listener.invoke(result?.text)
+                }
+            } catch (ignored: NotFoundException) {
+            } catch (ignored: FormatException) {
+            } catch (ignored: ChecksumException) {
+            } finally {
+                reader.reset()
+            }
+
+            // Compute the FPS of the entire pipeline
+            val frameCount = 10
+            if (++frameCounter % frameCount == 0) {
+                frameCounter = 0
+                val now = System.currentTimeMillis()
+                val delta = now - lastFpsTimestamp
+                val fps = 1000 * frameCount.toFloat() / delta
+                Log.d(TAG, "Analysis FPS: ${"%.02f".format(fps)}")
+                lastFpsTimestamp = now
+            }
         }
 
-        try {
-            val intArray = IntArray(rcBitmap.width * rcBitmap.height)
-            rcBitmap.getPixels(intArray, 0, rcBitmap.width, 0, 0, rcBitmap.width, rcBitmap.height)
-
-            val binaryBitmap = BinaryBitmap(HybridBinarizer(RGBLuminanceSource(rcBitmap.width, rcBitmap.height, intArray)))
-            val result = reader.decode(binaryBitmap)
-            listener.invoke(result?.text)
-        } catch (ignored: NotFoundException) {
-        } catch (ignored: FormatException) {
-        } catch (ignored: ChecksumException) {
-        } finally {
-            reader.reset()
-        }
-
-        // Compute the FPS of the entire pipeline
-        val frameCount = 10
-        if (++frameCounter % frameCount == 0) {
-            frameCounter = 0
-            val now = System.currentTimeMillis()
-            val delta = now - lastFpsTimestamp
-            val fps = 1000 * frameCount.toFloat() / delta
-            Log.d(TAG, "Analysis FPS: ${"%.02f".format(fps)}")
-            lastFpsTimestamp = now
-        }
         //rcBitmap.recycle()
         image.close()
     }

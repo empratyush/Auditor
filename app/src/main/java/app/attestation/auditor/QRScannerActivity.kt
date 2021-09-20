@@ -2,6 +2,7 @@ package app.attestation.auditor
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Rect
 import android.os.Bundle
 import android.util.Size
 import androidx.appcompat.app.AppCompatActivity
@@ -12,7 +13,6 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.MeteringPointFactory
 import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceOrientedMeteringPointFactory
-import androidx.camera.core.CameraInfoUnavailableException
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.CameraController
 import androidx.camera.view.LifecycleCameraController
@@ -21,6 +21,9 @@ import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
 import android.os.Handler
 import android.os.Looper
+import androidx.camera.core.SurfaceRequest
+import androidx.lifecycle.MutableLiveData
+import kotlin.math.min
 
 class QRScannerActivity : AppCompatActivity() {
 
@@ -30,7 +33,9 @@ class QRScannerActivity : AppCompatActivity() {
     private lateinit var contentFrame: PreviewView
 
     private val handler = Handler(Looper.getMainLooper())
-    private val autoCenterFocusDuration = 2000L
+    private val autoCenterFocusDuration = 10000L
+
+    private val cropPercent = MutableLiveData<Int>()
 
     private val runnable = Runnable {
         val factory: MeteringPointFactory = SurfaceOrientedMeteringPointFactory(
@@ -82,7 +87,7 @@ class QRScannerActivity : AppCompatActivity() {
 
     private fun startCamera() {
         contentFrame = findViewById(R.id.content_frame)
-        //contentFrame.setScaleType(PreviewView.ScaleType.FIT_CENTER)
+        contentFrame.setScaleType(PreviewView.ScaleType.FIT_CENTER)
         //adding scaling can cause problem with analizer unless it also handles scaling
         // currently it only handle rotation to keep it simple
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
@@ -100,30 +105,47 @@ class QRScannerActivity : AppCompatActivity() {
                 val preview = Preview.Builder()
                     .build()
                     .also {
-                        it.setSurfaceProvider(contentFrame.surfaceProvider)
+                        it.setSurfaceProvider(SurfaceProviderWithCallback(contentFrame){
+
+                        })
                     }
 
+                preview.setSurfaceProvider(SurfaceProviderWithCallback(contentFrame){
+                    var rect = preview.resolutionInfo?.cropRect!!
+                    this.cropPercent.postValue((overlayView.squareSize() * 100) /  min(rect.width(), rect.height()))
+                })
                 overlayView = findViewById(R.id.overlay)
 
                 val imageAnalysis = ImageAnalysis.Builder()
-                    //.setTargetResolution(Size(960, 960)) requesting resolution can cause additional cropping by camerax
+                    .setTargetResolution(Size(960, 960))
                     .build()
 
                 imageAnalysis.setAnalyzer(
                     executor,
-                    QRCodeImageAnalyzer (overlayView) { response ->
+                    QRCodeImageAnalyzer (overlayView, cropPercent) { response ->
                         if (response != null) {
                             handleResult(response)
                         }
                     }
                 )
-
                 cameraProvider.unbindAll()
                 camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
             },
             ContextCompat.getMainExecutor(this)
         )
     }
+
+    inner class SurfaceProviderWithCallback (
+            private val preview: PreviewView,
+            private val callback : () -> Unit
+    ) : Preview.SurfaceProvider {
+
+        override fun onSurfaceRequested(request: SurfaceRequest) {
+            preview.surfaceProvider.onSurfaceRequested(request)
+            callback.invoke()
+        }
+    }
+
 
     private fun handleResult(rawResult: String) {
         val result = Intent()

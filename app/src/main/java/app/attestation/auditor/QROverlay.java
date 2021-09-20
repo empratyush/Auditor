@@ -56,7 +56,6 @@ public class QROverlay extends View {
         final int width = getWidth();
         final int height = getHeight();
 
-
         int maxPossibleWidth = Math.min(getWidth(), getHeight());
         size = maxPossibleWidth - (maxPossibleWidth / 10);
 
@@ -128,6 +127,10 @@ public class QROverlay extends View {
         scanRect.right = scanRect.left + size;
         scanRect.bottom = scanRect.top + size;
 
+    }
+
+    public int squareSize(){
+        return size;
     }
 
     public Size getSize() {
